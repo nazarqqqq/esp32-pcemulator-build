@@ -1,0 +1,56 @@
+name: Build PCEmulator
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install -U platformio
+
+    - name: Build
+      run: pio run -e esp32-wrover
+
+    - name: Merge binaries
+      run: |
+        BOOTLOADER=$(find .pio/build/esp32-wrover -name "*bootloader.bin" | head -1)
+        PARTITIONS=$(find .pio/build/esp32-wrover -name "*partitions.bin" | head -1)
+        APP=$(find .pio/build/esp32-wrover -name "firmware.bin" | head -1)
+
+        echo "=== Files ==="
+        echo "Bootloader: $BOOTLOADER"
+        echo "Partitions: $PARTITIONS"
+        echo "App: $APP"
+
+        ~/.platformio/packages/tool-esptoolpy/esptool.py \
+          --chip esp32 merge_bin \
+          -o PCEmulator_merged.bin \
+          --flash_mode dio \
+          --flash_freq 80m \
+          --flash_size 4MB \
+          0x1000 "$BOOTLOADER" \
+          0x8000 "$PARTITIONS" \
+          0x10000 "$APP"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PCEmulator-firmware
+        path: |
+          PCEmulator_merged.bin
+          .pio/build/esp32-wrover/firmware.bin
